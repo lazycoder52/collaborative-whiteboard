@@ -4,7 +4,9 @@ function createAuthMiddleware(config) {
   return (req, res, next) => {
     const header = req.header("Authorization");
     if (!header) {
-      return res.status(401).json({ error: "Access Denied: No Token Provided" });
+      return res
+        .status(401)
+        .json({ error: "Access Denied: No Token Provided" });
     }
 
     const token = header.startsWith("Bearer ")
@@ -12,7 +14,9 @@ function createAuthMiddleware(config) {
       : header.trim();
 
     if (!token) {
-      return res.status(401).json({ error: "Access Denied: Invalid Token Format" });
+      return res
+        .status(401)
+        .json({ error: "Access Denied: Invalid Token Format" });
     }
 
     try {

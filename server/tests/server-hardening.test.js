@@ -36,7 +36,9 @@ describe("Phase 1: Server Hardening and Structure", () => {
         loadConfig({
           JWT_SECRET: "short_secret"
         });
-      }).toThrow(/JWT_SECRET is required and must be at least 32 characters long/);
+      }).toThrow(
+        /JWT_SECRET is required and must be at least 32 characters long/
+      );
     });
 
     test("loads defaults and parses CORS_ORIGINS as array", () => {
@@ -45,7 +47,10 @@ describe("Phase 1: Server Hardening and Structure", () => {
         CORS_ORIGINS: "http://localhost:3000, https://myapp.example.com"
       });
       expect(config.PORT).toBe(5000);
-      expect(config.CORS_ORIGINS).toEqual(["http://localhost:3000", "https://myapp.example.com"]);
+      expect(config.CORS_ORIGINS).toEqual([
+        "http://localhost:3000",
+        "https://myapp.example.com"
+      ]);
     });
   });
 
