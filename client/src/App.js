@@ -1,25 +1,25 @@
 import React from "react";
-import { BrowserRouter as Router, Route, Routes } from "react-router-dom";
+import { BrowserRouter as Router, Route, Routes, useParams } from "react-router-dom";
 import Board from "./components/Board";
 import Toolbar from "./components/Toolbar";
 import Toolbox from "./components/Toolbox";
 import Sidebar from "./components/Sidebar";
+import ConnectionBanner from "./components/ConnectionBanner";
 import BoardProvider from "./store/BoardProvider";
 import ToolboxProvider from "./store/ToolboxProvider";
 import Login from "./components/Login";
 import Register from "./components/Register";
-import { useParams } from "react-router-dom";
-
 
 function HomePage() {
-  const { id } = useParams(); // Get the dynamic id
+  const { id } = useParams();
   return (
     <ToolboxProvider>
       <div className="app-container">
+        <ConnectionBanner />
         <Toolbar />
-        <Board id={id}/>
+        <Board id={id} />
         <Toolbox />
-        <Sidebar /> 
+        <Sidebar />
       </div>
     </ToolboxProvider>
   );
@@ -33,7 +33,7 @@ function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
           <Route path="/" element={<HomePage />} />
-          <Route path="/:id" element={<HomePage />} /> 
+          <Route path="/:id" element={<HomePage />} />
         </Routes>
       </Router>
     </BoardProvider>

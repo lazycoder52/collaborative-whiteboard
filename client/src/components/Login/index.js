@@ -1,37 +1,42 @@
-import React, { useState, useContext } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import styles from './index.module.css';
-import boardContext from '../../store/board-context';
+import React, { useState, useContext } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import styles from "./index.module.css";
+import boardContext from "../../store/board-context";
+import { initSocket } from "../../utils/socket";
 
 const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-  const { isUserLoggedIn,setUserLoginStatus } = useContext(boardContext);
+  const { setUserLoginStatus } = useContext(boardContext);
 
-  console.log(isUserLoggedIn);
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setLoading(true);
     try {
       const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:5000";
       const response = await fetch(`${apiUrl}/api/users/login`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
+          "Content-Type": "application/json"
         },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: email.trim(), password })
       });
       const data = await response.json();
-      if (response.ok) {
-        localStorage.setItem('whiteboard_user_token', data.token);
+      if (response.ok && data.token) {
+        localStorage.setItem("whiteboard_user_token", data.token);
+        initSocket(data.token);
         setUserLoginStatus(true);
-        navigate('/');
+        navigate("/");
       } else {
-        alert(data.message || 'Login failed');
+        alert(data.error || data.message || "Login failed");
       }
     } catch (error) {
-      console.error('Login error:', error);
-      alert('An error occurred during login');
+      console.error("Login error:", error.message);
+      alert("An error occurred during login");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -53,7 +58,9 @@ const Login = () => {
           onChange={(e) => setPassword(e.target.value)}
           required
         />
-        <button type="submit">Login</button>
+        <button type="submit" disabled={loading}>
+          {loading ? "Logging in..." : "Login"}
+        </button>
       </form>
       <p>
         Don't have an account? <Link to="/register">Register here</Link>
