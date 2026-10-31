@@ -90,3 +90,4 @@ describe("Client Board Reducer", () => {
     expect(nextState.elements[0].id).toBe("e2");
   });
 });
+

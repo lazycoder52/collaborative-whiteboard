@@ -34,3 +34,4 @@ describe("Client Throttle Utility", () => {
     expect(fn).toHaveBeenLastCalledWith("point 3");
   });
 });
+
