@@ -1,0 +1,22 @@
+{
+  "benchmark": "Synthetic 200-point freehand stroke benchmark",
+  "points": 200,
+  "timestamp": "2026-10-31T18:17:19.154Z",
+  "monolithicFullArray": {
+    "eventCount": 200,
+    "totalBytesSent": 362930,
+    "databaseWrites": 200,
+    "description": "Full elements array transmitted and written to MongoDB on every single mousemove event"
+  },
+  "granularDeltaProtocol": {
+    "eventCount": 69,
+    "totalBytesSent": 124762,
+    "databaseWrites": 1,
+    "description": "One element:add event, throttled element:update batches (50ms interval), and debounced database persistence (2s window)"
+  },
+  "reduction": {
+    "bytesReductionPercent": "65.62%",
+    "databaseWritesReductionPercent": "99.50%",
+    "eventCountReductionPercent": "65.50%"
+  }
+}
