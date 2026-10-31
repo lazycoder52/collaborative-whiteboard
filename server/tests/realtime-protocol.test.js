@@ -41,9 +41,18 @@ describe("Phase 2: Real-time Protocol Rework", () => {
     });
 
     // Create test users
-    user1 = await User.create({ email: "user1@example.com", password: "password123" });
-    user2 = await User.create({ email: "user2@example.com", password: "password123" });
-    user3 = await User.create({ email: "user3@example.com", password: "password123" });
+    user1 = await User.create({
+      email: "user1@example.com",
+      password: "password123"
+    });
+    user2 = await User.create({
+      email: "user2@example.com",
+      password: "password123"
+    });
+    user3 = await User.create({
+      email: "user3@example.com",
+      password: "password123"
+    });
 
     token1 = jwt.sign({ userId: user1._id }, testConfig.JWT_SECRET);
     token2 = jwt.sign({ userId: user2._id }, testConfig.JWT_SECRET);
@@ -192,7 +201,14 @@ describe("Phase 2: Real-time Protocol Rework", () => {
     // User 1 adds elem-u1
     c1.emit("element:add", {
       canvasId: String(canvas1._id),
-      element: { id: "elem-u1", type: "RECTANGLE", x1: 0, y1: 0, x2: 20, y2: 20 }
+      element: {
+        id: "elem-u1",
+        type: "RECTANGLE",
+        x1: 0,
+        y1: 0,
+        x2: 20,
+        y2: 20
+      }
     });
 
     // User 2 adds elem-u2
@@ -244,7 +260,14 @@ describe("Phase 2: Real-time Protocol Rework", () => {
 
     c1.emit("element:add", {
       canvasId: String(canvas1._id),
-      element: { id: "elem-persistent", type: "LINE", x1: 1, y1: 1, x2: 2, y2: 2 }
+      element: {
+        id: "elem-persistent",
+        type: "LINE",
+        x1: 1,
+        y1: 1,
+        x2: 2,
+        y2: 2
+      }
     });
 
     await new Promise((r) => setTimeout(r, 100));
@@ -261,7 +284,64 @@ describe("Phase 2: Real-time Protocol Rework", () => {
 
     // Data should be saved in MongoDB
     const savedDoc = await Canvas.findById(canvas1._id);
-    expect(savedDoc.elements.some((e) => e.id === "elem-persistent")).toBe(true);
+    expect(savedDoc.elements.some((e) => e.id === "elem-persistent")).toBe(
+      true
+    );
+  });
+
+  test("debounced persistence: data survives a server restart", async () => {
+    // 1. Client connects to server, joins canvas1, adds element
+    const c1 = createClient(token1);
+    await new Promise((r) => c1.on("connect", r));
+    c1.emit("joinCanvas", { canvasId: String(canvas1._id) });
+    await new Promise((r) => setTimeout(r, 100));
+
+    c1.emit("element:add", {
+      canvasId: String(canvas1._id),
+      element: {
+        id: "elem-survive-restart",
+        type: "RECTANGLE",
+        x1: 5,
+        y1: 5,
+        x2: 45,
+        y2: 45
+      }
+    });
+
+    await new Promise((r) => setTimeout(r, 100));
+    c1.disconnect();
+    await new Promise((r) => setTimeout(r, 200));
+
+    // 2. Stop current HTTP server
+    await new Promise((resolve) => httpServer.close(resolve));
+
+    // 3. Start a completely new server instance pointing to the same database
+    const app2 = createApp(testConfig);
+    const newServerObj = createServer(app2, testConfig);
+    httpServer = newServerObj.httpServer;
+    io = newServerObj.io;
+    roomManager = newServerObj.roomManager;
+
+    await new Promise((resolve) => {
+      httpServer.listen(0, () => {
+        port = httpServer.address().port;
+        resolve();
+      });
+    });
+
+    // 4. Late joiner connects to the new server and verifies element survived
+    const cRestartJoiner = createClient(token2);
+    const received = await new Promise((resolve) => {
+      cRestartJoiner.on("connect", () => {
+        cRestartJoiner.emit("joinCanvas", { canvasId: String(canvas1._id) });
+      });
+      cRestartJoiner.on("canvas:load", resolve);
+    });
+
+    expect(received.elements.some((e) => e.id === "elem-survive-restart")).toBe(
+      true
+    );
+    cRestartJoiner.disconnect();
   });
 
   test("rejects element with points exceeding limit", async () => {
@@ -270,7 +350,10 @@ describe("Phase 2: Real-time Protocol Rework", () => {
     c1.emit("joinCanvas", { canvasId: String(canvas1._id) });
     await new Promise((r) => setTimeout(r, 100));
 
-    const tooManyPoints = Array.from({ length: 5001 }, (_, i) => ({ x: i, y: i }));
+    const tooManyPoints = Array.from({ length: 5001 }, (_, i) => ({
+      x: i,
+      y: i
+    }));
 
     const errorPromise = new Promise((resolve) => {
       c1.on("error", (data) => resolve(data));
