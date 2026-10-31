@@ -6,6 +6,16 @@ const Canvas = require("./models/canvasModel");
 const { loadConfig } = require("./config/env");
 const { connectDB, disconnectDB } = require("./config/db");
 const { createApp } = require("./app");
+const { CanvasRoomManager } = require("./services/canvasRoomManager");
+const { TokenBucket } = require("./services/tokenBucket");
+const {
+  joinCanvasSchema,
+  elementAddSchema,
+  elementUpdateSchema,
+  elementRemoveSchema,
+  undoSchema,
+  redoSchema
+} = require("./services/socketSchemas");
 
 function extractSocketToken(socket) {
   if (socket.handshake.auth && socket.handshake.auth.token) {
@@ -20,7 +30,7 @@ function extractSocketToken(socket) {
   return null;
 }
 
-function createServer(app, config) {
+function createServer(app, config, customRoomManager = null) {
   const httpServer = http.createServer(app);
   const io = new Server(httpServer, {
     cors: {
@@ -28,8 +38,10 @@ function createServer(app, config) {
       methods: ["GET", "POST"],
       credentials: true
     },
-    maxHttpBufferSize: 1e6 // 1MB default
+    maxHttpBufferSize: 1e6 // 1MB maximum payload size limit
   });
+
+  const roomManager = customRoomManager || new CanvasRoomManager(2000);
 
   // Socket authentication middleware
   io.use((socket, next) => {
@@ -41,19 +53,27 @@ function createServer(app, config) {
     try {
       const decoded = jwt.verify(token, config.JWT_SECRET);
       socket.userId = decoded.userId;
+      socket.rateLimiter = new TokenBucket(60, 40); // 60 burst, 40/sec refill
       next();
     } catch (err) {
       return next(new Error("Authentication error: Invalid or expired token"));
     }
   });
 
-  let canvasData = {};
-
   io.on("connection", (socket) => {
-    socket.on("joinCanvas", async ({ canvasId }) => {
+    socket.on("joinCanvas", async (rawPayload) => {
       try {
-        if (!canvasId || !mongoose.Types.ObjectId.isValid(canvasId)) {
-          return socket.emit("error", { message: "Invalid canvasId" });
+        const parseResult = joinCanvasSchema.safeParse(rawPayload);
+        if (!parseResult.success) {
+          return socket.emit("error", {
+            message: "Invalid joinCanvas payload",
+            details: parseResult.error.issues
+          });
+        }
+
+        const { canvasId } = parseResult.data;
+        if (!mongoose.Types.ObjectId.isValid(canvasId)) {
+          return socket.emit("error", { message: "Invalid canvasId format" });
         }
 
         const canvas = await Canvas.findById(canvasId);
@@ -69,33 +89,147 @@ function createServer(app, config) {
           });
         }
 
+        const room = await roomManager.loadOrCreateRoom(canvasId);
+        roomManager.joinSocket(room, socket.id, socket.userId);
         socket.join(canvasId);
-        const existing = canvasData[canvasId] || canvas.elements || [];
-        socket.emit("loadCanvas", existing);
+        socket.currentCanvasId = canvasId;
+
+        // Send full canvas state ONLY on join
+        socket.emit("canvas:load", {
+          canvasId,
+          elements: roomManager.getElements(canvasId)
+        });
+
+        // Broadcast presence
+        socket.to(canvasId).emit("presence:join", {
+          canvasId,
+          userId: socket.userId
+        });
       } catch (error) {
-        socket.emit("error", { message: "Failed to join canvas" });
+        socket.emit("error", { message: "Failed to join canvas", details: error.message });
       }
     });
 
-    socket.on("drawingUpdate", async ({ canvasId, elements }) => {
-      try {
-        if (!canvasId || !Array.isArray(elements)) return;
-        canvasData[canvasId] = elements;
-        socket.to(canvasId).emit("receiveDrawingUpdate", elements);
+    socket.on("element:add", (rawPayload) => {
+      if (!socket.rateLimiter.consume(1)) {
+        return socket.emit("error", { message: "Rate limit exceeded" });
+      }
 
-        if (mongoose.Types.ObjectId.isValid(canvasId)) {
-          await Canvas.findByIdAndUpdate(canvasId, {
-            elements,
-            updatedAt: new Date()
+      const parseResult = elementAddSchema.safeParse(rawPayload);
+      if (!parseResult.success) {
+        return socket.emit("error", {
+          message: "Invalid element:add payload",
+          details: parseResult.error.issues
+        });
+      }
+
+      const { canvasId, element } = parseResult.data;
+      const added = roomManager.addElement(canvasId, element, socket.userId);
+      if (added) {
+        socket.to(canvasId).emit("element:add", { canvasId, element: added });
+      }
+    });
+
+    socket.on("element:update", (rawPayload) => {
+      if (!socket.rateLimiter.consume(1)) {
+        return socket.emit("error", { message: "Rate limit exceeded" });
+      }
+
+      const parseResult = elementUpdateSchema.safeParse(rawPayload);
+      if (!parseResult.success) {
+        return socket.emit("error", {
+          message: "Invalid element:update payload",
+          details: parseResult.error.issues
+        });
+      }
+
+      const { canvasId, id, patch } = parseResult.data;
+      const updated = roomManager.updateElement(canvasId, id, patch, socket.userId);
+      if (updated) {
+        socket.to(canvasId).emit("element:update", { canvasId, id, patch });
+      }
+    });
+
+    socket.on("element:remove", (rawPayload) => {
+      if (!socket.rateLimiter.consume(1)) {
+        return socket.emit("error", { message: "Rate limit exceeded" });
+      }
+
+      const parseResult = elementRemoveSchema.safeParse(rawPayload);
+      if (!parseResult.success) {
+        return socket.emit("error", {
+          message: "Invalid element:remove payload",
+          details: parseResult.error.issues
+        });
+      }
+
+      const { canvasId, id } = parseResult.data;
+      const removed = roomManager.removeElement(canvasId, id, socket.userId);
+      if (removed) {
+        socket.to(canvasId).emit("element:remove", { canvasId, id });
+      }
+    });
+
+    socket.on("undo", (rawPayload) => {
+      if (!socket.rateLimiter.consume(1)) {
+        return socket.emit("error", { message: "Rate limit exceeded" });
+      }
+
+      const parseResult = undoSchema.safeParse(rawPayload);
+      if (!parseResult.success) {
+        return socket.emit("error", { message: "Invalid undo payload" });
+      }
+
+      const { canvasId } = parseResult.data;
+      const result = roomManager.undo(canvasId, socket.userId);
+      if (result) {
+        if (result.actionType === "remove") {
+          io.in(canvasId).emit("element:remove", { canvasId, id: result.id });
+        } else if (result.actionType === "add") {
+          io.in(canvasId).emit("element:add", { canvasId, element: result.element });
+        }
+      }
+    });
+
+    socket.on("redo", (rawPayload) => {
+      if (!socket.rateLimiter.consume(1)) {
+        return socket.emit("error", { message: "Rate limit exceeded" });
+      }
+
+      const parseResult = redoSchema.safeParse(rawPayload);
+      if (!parseResult.success) {
+        return socket.emit("error", { message: "Invalid redo payload" });
+      }
+
+      const { canvasId } = parseResult.data;
+      const result = roomManager.redo(canvasId, socket.userId);
+      if (result) {
+        if (result.actionType === "add") {
+          io.in(canvasId).emit("element:add", { canvasId, element: result.element });
+        } else if (result.actionType === "remove") {
+          io.in(canvasId).emit("element:remove", { canvasId, id: result.id });
+        }
+      }
+    });
+
+    socket.on("disconnect", async () => {
+      if (socket.currentCanvasId) {
+        const { isEmpty } = await roomManager.leaveSocket(
+          socket.currentCanvasId,
+          socket.id,
+          socket.userId
+        );
+        if (!isEmpty) {
+          socket.to(socket.currentCanvasId).emit("presence:leave", {
+            canvasId: socket.currentCanvasId,
+            userId: socket.userId
           });
         }
-      } catch (error) {
-        console.error("drawingUpdate error:", error.message);
       }
     });
   });
 
-  return { httpServer, io };
+  return { httpServer, io, roomManager };
 }
 
 async function startServer(customConfig) {
@@ -104,12 +238,26 @@ async function startServer(customConfig) {
   console.log(`Database connected: ${dbInfo.isMemory ? "in-memory mongodb" : dbInfo.uri}`);
 
   const app = createApp(config);
-  const { httpServer, io } = createServer(app, config);
+  const { httpServer, io, roomManager } = createServer(app, config);
+
+  // Graceful shutdown handling
+  const shutdown = async () => {
+    console.log("Graceful shutdown initiated...");
+    await roomManager.flushAll();
+    await disconnectDB();
+    httpServer.close(() => {
+      console.log("Server stopped successfully.");
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 
   return new Promise((resolve) => {
     const serverInstance = httpServer.listen(config.PORT, () => {
       console.log(`Server listening on port ${config.PORT} (${config.NODE_ENV})`);
-      resolve({ serverInstance, httpServer, io, config });
+      resolve({ serverInstance, httpServer, io, roomManager, config });
     });
   });
 }
