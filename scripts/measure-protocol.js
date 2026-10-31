@@ -3,7 +3,7 @@ const path = require("path");
 
 function runBenchmark() {
   const TOTAL_POINTS = 200;
-  const CANVAS_ID = "67a66a7c2475972d34655e4d";
+  const CANVAS_ID = "000000000000000000000001";
   const ELEMENT_ID = "elem-benchmark-uuid-001";
 
   // Generate synthetic 200-point freehand stroke
