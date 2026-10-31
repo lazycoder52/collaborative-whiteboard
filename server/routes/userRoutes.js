@@ -1,12 +1,17 @@
 const express = require("express");
-const { registerUser, loginUser, getUser } = require("../controllers/userController");
-const { authMiddleware } = require("../middlewares/authMiddleware");
+const { createUserController, registerSchema, loginSchema } = require("../controllers/userController");
+const { validateBody } = require("../middlewares/validateMiddleware");
+const { authLimiter } = require("../middlewares/rateLimiter");
 
-const router = express.Router();
+function createUserRoutes(config, authMiddleware) {
+  const router = express.Router();
+  const userController = createUserController(config);
 
-router.post("/register", registerUser);
-router.post("/login", loginUser);
-router.get("/me", authMiddleware, getUser);
+  router.post("/register", authLimiter, validateBody(registerSchema), userController.registerUser);
+  router.post("/login", authLimiter, validateBody(loginSchema), userController.loginUser);
+  router.get("/me", authMiddleware, userController.getUser);
 
+  return router;
+}
 
-module.exports = router;
+module.exports = { createUserRoutes };
