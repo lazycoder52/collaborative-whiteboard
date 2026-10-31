@@ -1,22 +1,22 @@
 import { createContext } from "react";
 
 const boardContext = createContext({
-  isUserLoggedIn: false,
   activeToolItem: "",
-  toolActionType: "",
   elements: [],
-  history: [[]],
-  index: 0,
-  canvasId: "", 
-  setElements: () => {},
-  boardMouseDownHandler: () => {},
-  setCanvasId: () => {},
+  toolActionType: "",
+  canvasId: "",
+  isUserLoggedIn: false,
   changeToolHandler: () => {},
+  boardMouseDownHandler: () => {},
   boardMouseMoveHandler: () => {},
   boardMouseUpHandler: () => {},
-  setUserLoginStatus: () => {},
-  setHistory: () => {}
+  textAreaBlurHandler: () => {},
+  setCanvasId: () => {},
+  setElements: () => {},
+  addDeltaElement: () => {},
+  updateDeltaElement: () => {},
+  removeDeltaElement: () => {},
+  setUserLoginStatus: () => {}
 });
-
 
 export default boardContext;

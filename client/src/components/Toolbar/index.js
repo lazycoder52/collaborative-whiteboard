@@ -1,6 +1,5 @@
 import React, { useContext } from "react";
 import classes from "./index.module.css";
-
 import cx from "classnames";
 import {
   FaSlash,
@@ -16,18 +15,31 @@ import {
 import { LuRectangleHorizontal } from "react-icons/lu";
 import { TOOL_ITEMS } from "../../constants";
 import boardContext from "../../store/board-context";
+import { getSocket } from "../../utils/socket";
 
 const Toolbar = () => {
-  const { activeToolItem, changeToolHandler, undo, redo } =
-    useContext(boardContext);
+  const { activeToolItem, changeToolHandler, canvasId } = useContext(boardContext);
 
   const handleDownloadClick = () => {
     const canvas = document.getElementById("canvas");
+    if (!canvas) return;
     const data = canvas.toDataURL("image/png");
     const anchor = document.createElement("a");
     anchor.href = data;
     anchor.download = "board.png";
     anchor.click();
+  };
+
+  const handleUndo = () => {
+    if (canvasId) {
+      getSocket().emit("undo", { canvasId });
+    }
+  };
+
+  const handleRedo = () => {
+    if (canvasId) {
+      getSocket().emit("redo", { canvasId });
+    }
   };
 
   return (
@@ -88,13 +100,13 @@ const Toolbar = () => {
       >
         <FaFont />
       </div>
-      <div className={classes.toolItem} onClick={undo}>
+      <div className={classes.toolItem} onClick={handleUndo} title="Undo">
         <FaUndoAlt />
       </div>
-      <div className={classes.toolItem} onClick={redo}>
+      <div className={classes.toolItem} onClick={handleRedo} title="Redo">
         <FaRedoAlt />
       </div>
-      <div className={classes.toolItem} onClick={handleDownloadClick}>
+      <div className={classes.toolItem} onClick={handleDownloadClick} title="Download PNG">
         <FaDownload />
       </div>
     </div>
