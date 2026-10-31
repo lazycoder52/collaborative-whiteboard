@@ -72,3 +72,4 @@ module.exports = {
   undoSchema,
   redoSchema
 };
+

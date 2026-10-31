@@ -305,3 +305,4 @@ class CanvasRoomManager {
 }
 
 module.exports = { CanvasRoomManager };
+
