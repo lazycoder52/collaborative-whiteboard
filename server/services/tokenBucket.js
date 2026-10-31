@@ -9,7 +9,10 @@ class TokenBucket {
   refill() {
     const now = Date.now();
     const elapsedSeconds = (now - this.lastRefill) / 1000;
-    this.tokens = Math.min(this.capacity, this.tokens + elapsedSeconds * this.refillRate);
+    this.tokens = Math.min(
+      this.capacity,
+      this.tokens + elapsedSeconds * this.refillRate
+    );
     this.lastRefill = now;
   }
 

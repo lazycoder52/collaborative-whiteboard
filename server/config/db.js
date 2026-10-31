@@ -21,9 +21,13 @@ async function connectDB(config, retries = 5, backoffMs = 1000) {
     } catch (error) {
       attempt += 1;
       const delay = backoffMs * Math.pow(2, attempt - 1);
-      console.error(`MongoDB connection attempt ${attempt}/${retries} failed: ${error.message}`);
+      console.error(
+        `MongoDB connection attempt ${attempt}/${retries} failed: ${error.message}`
+      );
       if (attempt >= retries) {
-        throw new Error(`Failed to connect to MongoDB after ${retries} attempts: ${error.message}`);
+        throw new Error(
+          `Failed to connect to MongoDB after ${retries} attempts: ${error.message}`
+        );
       }
       await new Promise((resolve) => setTimeout(resolve, delay));
     }

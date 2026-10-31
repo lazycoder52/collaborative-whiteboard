@@ -249,9 +249,7 @@ class CanvasRoomManager {
   getElements(canvasId) {
     const room = this.rooms.get(String(canvasId));
     if (!room) return [];
-    return room.elementOrder
-      .map((id) => room.elements.get(id))
-      .filter(Boolean);
+    return room.elementOrder.map((id) => room.elements.get(id)).filter(Boolean);
   }
 
   markDirty(room) {
@@ -261,7 +259,10 @@ class CanvasRoomManager {
     }
     room.debounceTimer = setTimeout(() => {
       this.flushRoom(room.canvasId).catch((err) => {
-        console.error(`Debounced flush failed for canvas ${room.canvasId}:`, err.message);
+        console.error(
+          `Debounced flush failed for canvas ${room.canvasId}:`,
+          err.message
+        );
       });
     }, this.debounceMs);
   }

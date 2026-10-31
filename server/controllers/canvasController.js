@@ -44,7 +44,9 @@ function createCanvasController() {
         canvas: newCanvas
       });
     } catch (error) {
-      return res.status(500).json({ error: "Failed to create canvas", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to create canvas", details: error.message });
     }
   };
 
@@ -63,9 +65,13 @@ function createCanvasController() {
       }
 
       const isOwner = String(canvas.owner) === String(userId);
-      const isShared = canvas.shared.some((id) => String(id) === String(userId));
+      const isShared = canvas.shared.some(
+        (id) => String(id) === String(userId)
+      );
       if (!isOwner && !isShared) {
-        return res.status(403).json({ error: "Unauthorized to update this canvas" });
+        return res
+          .status(403)
+          .json({ error: "Unauthorized to update this canvas" });
       }
 
       canvas.elements = elements;
@@ -74,7 +80,9 @@ function createCanvasController() {
 
       return res.json({ message: "Canvas updated successfully" });
     } catch (error) {
-      return res.status(500).json({ error: "Failed to update canvas", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to update canvas", details: error.message });
     }
   };
 
@@ -93,14 +101,20 @@ function createCanvasController() {
       }
 
       const isOwner = String(canvas.owner) === String(userId);
-      const isShared = canvas.shared.some((id) => String(id) === String(userId));
+      const isShared = canvas.shared.some(
+        (id) => String(id) === String(userId)
+      );
       if (!isOwner && !isShared) {
-        return res.status(403).json({ error: "Unauthorized to access this canvas" });
+        return res
+          .status(403)
+          .json({ error: "Unauthorized to access this canvas" });
       }
 
       return res.json(canvas);
     } catch (error) {
-      return res.status(500).json({ error: "Failed to load canvas", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to load canvas", details: error.message });
     }
   };
 
@@ -116,7 +130,9 @@ function createCanvasController() {
 
       const userToShare = await User.findOne({ email });
       if (!userToShare) {
-        return res.status(404).json({ error: "User with this email not found" });
+        return res
+          .status(404)
+          .json({ error: "User with this email not found" });
       }
 
       const canvas = await Canvas.findById(canvasId);
@@ -125,14 +141,20 @@ function createCanvasController() {
       }
 
       if (String(canvas.owner) !== String(userId)) {
-        return res.status(403).json({ error: "Only the owner can share this canvas" });
+        return res
+          .status(403)
+          .json({ error: "Only the owner can share this canvas" });
       }
 
       if (String(canvas.owner) === String(userToShare._id)) {
-        return res.status(400).json({ error: "Owner cannot be added to shared list" });
+        return res
+          .status(400)
+          .json({ error: "Owner cannot be added to shared list" });
       }
 
-      const alreadyShared = canvas.shared.some((id) => String(id) === String(userToShare._id));
+      const alreadyShared = canvas.shared.some(
+        (id) => String(id) === String(userToShare._id)
+      );
       if (alreadyShared) {
         return res.status(400).json({ error: "Already shared with user" });
       }
@@ -142,7 +164,9 @@ function createCanvasController() {
 
       return res.json({ message: "Canvas shared successfully" });
     } catch (error) {
-      return res.status(500).json({ error: "Failed to share canvas", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to share canvas", details: error.message });
     }
   };
 
@@ -162,15 +186,21 @@ function createCanvasController() {
       }
 
       if (String(canvas.owner) !== String(userId)) {
-        return res.status(403).json({ error: "Only the owner can unshare this canvas" });
+        return res
+          .status(403)
+          .json({ error: "Only the owner can unshare this canvas" });
       }
 
-      canvas.shared = canvas.shared.filter((id) => String(id) !== String(userIdToRemove));
+      canvas.shared = canvas.shared.filter(
+        (id) => String(id) !== String(userIdToRemove)
+      );
       await canvas.save();
 
       return res.json({ message: "Canvas unshared successfully" });
     } catch (error) {
-      return res.status(500).json({ error: "Failed to unshare canvas", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to unshare canvas", details: error.message });
     }
   };
 
@@ -189,13 +219,17 @@ function createCanvasController() {
       }
 
       if (String(canvas.owner) !== String(userId)) {
-        return res.status(403).json({ error: "Only the owner can delete this canvas" });
+        return res
+          .status(403)
+          .json({ error: "Only the owner can delete this canvas" });
       }
 
       await Canvas.findByIdAndDelete(canvasId);
       return res.json({ message: "Canvas deleted successfully" });
     } catch (error) {
-      return res.status(500).json({ error: "Failed to delete canvas", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to delete canvas", details: error.message });
     }
   };
 
@@ -208,7 +242,9 @@ function createCanvasController() {
 
       return res.json(canvases);
     } catch (error) {
-      return res.status(500).json({ error: "Failed to fetch canvases", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch canvases", details: error.message });
     }
   };
 

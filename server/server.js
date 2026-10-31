@@ -82,7 +82,9 @@ function createServer(app, config, customRoomManager = null) {
         }
 
         const isOwner = String(canvas.owner) === String(socket.userId);
-        const isShared = canvas.shared.some((id) => String(id) === String(socket.userId));
+        const isShared = canvas.shared.some(
+          (id) => String(id) === String(socket.userId)
+        );
         if (!isOwner && !isShared) {
           return socket.emit("unauthorized", {
             message: "You are not authorized to join this canvas."
@@ -106,7 +108,10 @@ function createServer(app, config, customRoomManager = null) {
           userId: socket.userId
         });
       } catch (error) {
-        socket.emit("error", { message: "Failed to join canvas", details: error.message });
+        socket.emit("error", {
+          message: "Failed to join canvas",
+          details: error.message
+        });
       }
     });
 
@@ -144,7 +149,12 @@ function createServer(app, config, customRoomManager = null) {
       }
 
       const { canvasId, id, patch } = parseResult.data;
-      const updated = roomManager.updateElement(canvasId, id, patch, socket.userId);
+      const updated = roomManager.updateElement(
+        canvasId,
+        id,
+        patch,
+        socket.userId
+      );
       if (updated) {
         socket.to(canvasId).emit("element:update", { canvasId, id, patch });
       }
@@ -186,7 +196,10 @@ function createServer(app, config, customRoomManager = null) {
         if (result.actionType === "remove") {
           io.in(canvasId).emit("element:remove", { canvasId, id: result.id });
         } else if (result.actionType === "add") {
-          io.in(canvasId).emit("element:add", { canvasId, element: result.element });
+          io.in(canvasId).emit("element:add", {
+            canvasId,
+            element: result.element
+          });
         }
       }
     });
@@ -205,7 +218,10 @@ function createServer(app, config, customRoomManager = null) {
       const result = roomManager.redo(canvasId, socket.userId);
       if (result) {
         if (result.actionType === "add") {
-          io.in(canvasId).emit("element:add", { canvasId, element: result.element });
+          io.in(canvasId).emit("element:add", {
+            canvasId,
+            element: result.element
+          });
         } else if (result.actionType === "remove") {
           io.in(canvasId).emit("element:remove", { canvasId, id: result.id });
         }
@@ -235,7 +251,9 @@ function createServer(app, config, customRoomManager = null) {
 async function startServer(customConfig) {
   const config = customConfig || loadConfig();
   const dbInfo = await connectDB(config);
-  console.log(`Database connected: ${dbInfo.isMemory ? "in-memory mongodb" : dbInfo.uri}`);
+  console.log(
+    `Database connected: ${dbInfo.isMemory ? "in-memory mongodb" : dbInfo.uri}`
+  );
 
   const app = createApp(config);
   const { httpServer, io, roomManager } = createServer(app, config);
@@ -256,7 +274,9 @@ async function startServer(customConfig) {
 
   return new Promise((resolve) => {
     const serverInstance = httpServer.listen(config.PORT, () => {
-      console.log(`Server listening on port ${config.PORT} (${config.NODE_ENV})`);
+      console.log(
+        `Server listening on port ${config.PORT} (${config.NODE_ENV})`
+      );
       resolve({ serverInstance, httpServer, io, roomManager, config });
     });
   });

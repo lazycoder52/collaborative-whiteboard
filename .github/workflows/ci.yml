@@ -24,7 +24,12 @@ jobs:
           cd server
           npm install
 
-      - name: Run server tests
+      - name: Check code formatting (Prettier)
+        run: |
+          cd server
+          npm run format:check
+
+      - name: Run server tests & metric assertions
         run: |
           cd server
           npm test
@@ -49,12 +54,9 @@ jobs:
       - name: Run client tests
         run: |
           cd client
-          npm test -- --watchAll=false --passWithNoTests
+          npm test -- --watchAll=false
 
       - name: Build client production bundle
-        env:
-          CI: false
         run: |
           cd client
           npm run build
-

@@ -4,7 +4,9 @@ const { z } = require("zod");
 
 const registerSchema = z.object({
   email: z.string().email({ message: "Valid email is required" }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters" })
+  password: z
+    .string()
+    .min(6, { message: "Password must be at least 6 characters" })
 });
 
 const loginSchema = z.object({
@@ -29,7 +31,9 @@ function createUserController(config) {
         userId: newUser._id
       });
     } catch (error) {
-      return res.status(500).json({ error: "Registration failed", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Registration failed", details: error.message });
     }
   };
 
@@ -56,7 +60,9 @@ function createUserController(config) {
         userId: user._id
       });
     } catch (error) {
-      return res.status(500).json({ error: "Login failed", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Login failed", details: error.message });
     }
   };
 
@@ -68,7 +74,9 @@ function createUserController(config) {
       }
       return res.json(user);
     } catch (error) {
-      return res.status(500).json({ error: "Failed to fetch user", details: error.message });
+      return res
+        .status(500)
+        .json({ error: "Failed to fetch user", details: error.message });
     }
   };
 
