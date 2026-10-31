@@ -1,15 +1,27 @@
 const express = require("express");
-const { createCanvas, updateCanvas, loadCanvas, shareCanvas, unshareCanvas, deleteCanvas, getUserCanvases} = require("../controllers/canvasController");
-const { authMiddleware } = require("../middlewares/authMiddleware");
+const {
+  createCanvasController,
+  createCanvasSchema,
+  updateCanvasSchema,
+  shareCanvasSchema,
+  unshareCanvasSchema,
+  idParamSchema
+} = require("../controllers/canvasController");
+const { validateBody, validateParams } = require("../middlewares/validateMiddleware");
 
-const router = express.Router();
+function createCanvasRoutes(authMiddleware) {
+  const router = express.Router();
+  const canvasController = createCanvasController();
 
-router.post("/create", authMiddleware, createCanvas); 
-router.put("/update", authMiddleware, updateCanvas); 
-router.get("/load/:id", authMiddleware, loadCanvas); 
-router.put("/share/:id", authMiddleware, shareCanvas); 
-router.put("/unshare/:id", authMiddleware, unshareCanvas);
-router.delete("/delete/:id", authMiddleware, deleteCanvas); 
-router.get("/list", authMiddleware, getUserCanvases);
+  router.post("/create", authMiddleware, validateBody(createCanvasSchema), canvasController.createCanvas);
+  router.put("/update", authMiddleware, validateBody(updateCanvasSchema), canvasController.updateCanvas);
+  router.get("/load/:id", authMiddleware, validateParams(idParamSchema), canvasController.loadCanvas);
+  router.put("/share/:id", authMiddleware, validateParams(idParamSchema), validateBody(shareCanvasSchema), canvasController.shareCanvas);
+  router.put("/unshare/:id", authMiddleware, validateParams(idParamSchema), validateBody(unshareCanvasSchema), canvasController.unshareCanvas);
+  router.delete("/delete/:id", authMiddleware, validateParams(idParamSchema), canvasController.deleteCanvas);
+  router.get("/list", authMiddleware, canvasController.getUserCanvases);
 
-module.exports = router;
+  return router;
+}
+
+module.exports = { createCanvasRoutes };

@@ -1,178 +1,233 @@
 const Canvas = require("../models/canvasModel");
 const User = require("../models/userModel");
 const mongoose = require("mongoose");
+const { z } = require("zod");
 
-// Create a new canvas
-exports.createCanvas = async (req, res) => {
+const createCanvasSchema = z.object({
+  title: z.string().optional()
+});
+
+const updateCanvasSchema = z.object({
+  canvasId: z.string().min(1, { message: "canvasId is required" }),
+  elements: z.array(z.any()).default([])
+});
+
+const shareCanvasSchema = z.object({
+  email: z.string().email({ message: "Valid email is required" })
+});
+
+const unshareCanvasSchema = z.object({
+  userIdToRemove: z.string().min(1, { message: "userIdToRemove is required" })
+});
+
+const idParamSchema = z.object({
+  id: z.string().min(1, { message: "Canvas ID is required" })
+});
+
+function createCanvasController() {
+  const createCanvas = async (req, res) => {
     try {
-        const userId = req.userId; // Get the authenticated user ID
+      const userId = req.userId;
+      const title = req.body?.title || "Untitled Canvas";
 
-        const newCanvas = new Canvas({
-            owner: userId,
-            shared: [],
-            elements: []
-        });
+      const newCanvas = new Canvas({
+        title,
+        owner: userId,
+        shared: [],
+        elements: []
+      });
 
-        await newCanvas.save();
-        res.status(201).json({ message: "Canvas created successfully", canvasId: newCanvas._id });
+      await newCanvas.save();
+      return res.status(201).json({
+        message: "Canvas created successfully",
+        canvasId: newCanvas._id,
+        canvas: newCanvas
+      });
     } catch (error) {
-        res.status(500).json({ error: "Failed to create canvas", details: error.message });
+      return res.status(500).json({ error: "Failed to create canvas", details: error.message });
     }
-};
+  };
 
-// Update an existing canvas (when elements are drawn)
-exports.updateCanvas = async (req, res) => {
+  const updateCanvas = async (req, res) => {
     try {
-        const { canvasId, elements } = req.body;
-        const userId = req.userId;
-        console.log("canvas id ", canvasId)
+      const { canvasId, elements } = req.body;
+      const userId = req.userId;
 
-        const canvas = await Canvas.findById(canvasId);
-        if (!canvas) {
-            return res.status(404).json({ error: "Canvas not found" });
-        }
+      if (!mongoose.Types.ObjectId.isValid(canvasId)) {
+        return res.status(400).json({ error: "Invalid canvas ID" });
+      }
 
-        // Ensure only the owner or shared users can update
-        if (canvas.owner.toString() !== userId && !canvas.shared.includes(userId)) {
-            return res.status(403).json({ error: "Unauthorized to update this canvas" });
-        }
+      const canvas = await Canvas.findById(canvasId);
+      if (!canvas) {
+        return res.status(404).json({ error: "Canvas not found" });
+      }
 
-        canvas.elements = elements;
-        await canvas.save();
+      const isOwner = String(canvas.owner) === String(userId);
+      const isShared = canvas.shared.some((id) => String(id) === String(userId));
+      if (!isOwner && !isShared) {
+        return res.status(403).json({ error: "Unauthorized to update this canvas" });
+      }
 
-        console.log("saved")
+      canvas.elements = elements;
+      canvas.updatedAt = new Date();
+      await canvas.save();
 
-        res.json({ message: "Canvas updated successfully" });
+      return res.json({ message: "Canvas updated successfully" });
     } catch (error) {
-        res.status(500).json({ error: "Failed to update canvas", details: error.message });
+      return res.status(500).json({ error: "Failed to update canvas", details: error.message });
     }
-};
+  };
 
-// Load a canvas
-exports.loadCanvas = async (req, res) => {
+  const loadCanvas = async (req, res) => {
     try {
-        const canvasId = req.params.id;
-        const userId = req.userId;
+      const canvasId = req.params.id;
+      const userId = req.userId;
 
-        const canvas = await Canvas.findById(canvasId);
-        if (!canvas) {
-            return res.status(404).json({ error: "Canvas not found" });
-        }
+      if (!mongoose.Types.ObjectId.isValid(canvasId)) {
+        return res.status(400).json({ error: "Invalid canvas ID" });
+      }
 
-        // Ensure only the owner or shared users can access it
-        if (canvas.owner.toString() !== userId && !canvas.shared.includes(userId)) {
-            return res.status(403).json({ error: "Unauthorized to access this canvas" });
-        }
+      const canvas = await Canvas.findById(canvasId);
+      if (!canvas) {
+        return res.status(404).json({ error: "Canvas not found" });
+      }
 
-        res.json(canvas);
+      const isOwner = String(canvas.owner) === String(userId);
+      const isShared = canvas.shared.some((id) => String(id) === String(userId));
+      if (!isOwner && !isShared) {
+        return res.status(403).json({ error: "Unauthorized to access this canvas" });
+      }
+
+      return res.json(canvas);
     } catch (error) {
-        res.status(500).json({ error: "Failed to load canvas", details: error.message });
+      return res.status(500).json({ error: "Failed to load canvas", details: error.message });
     }
-};
+  };
 
-
-exports.shareCanvas = async (req, res) => {
+  const shareCanvas = async (req, res) => {
     try {
-        const { email } = req.body; 
-        const canvasId = req.params.id;
-        const userId = req.userId; 
+      const { email } = req.body;
+      const canvasId = req.params.id;
+      const userId = req.userId;
 
-        // Find the user by email
-        const userToShare = await User.findOne({ email });
-        if (!userToShare) {
-            return res.status(404).json({ error: "User with this email not found" });
-        }
+      if (!mongoose.Types.ObjectId.isValid(canvasId)) {
+        return res.status(400).json({ error: "Invalid canvas ID" });
+      }
 
-        const canvas = await Canvas.findById(canvasId);
-        if (!canvas) {
-            return res.status(404).json({ error: "Canvas not found" });
-        }
+      const userToShare = await User.findOne({ email });
+      if (!userToShare) {
+        return res.status(404).json({ error: "User with this email not found" });
+      }
 
-        if (canvas.owner.toString() !== userId) {
-            return res.status(403).json({ error: "Only the owner can share this canvas" });
-        }
+      const canvas = await Canvas.findById(canvasId);
+      if (!canvas) {
+        return res.status(404).json({ error: "Canvas not found" });
+      }
 
-        // Ensure the shared userId is an ObjectId
-        const sharedUserId = new mongoose.Types.ObjectId(userToShare._id);
+      if (String(canvas.owner) !== String(userId)) {
+        return res.status(403).json({ error: "Only the owner can share this canvas" });
+      }
 
-        // Prevent adding the owner to shared list
-        if (canvas.owner.toString() === sharedUserId.toString()) {
-            return res.status(400).json({ error: "Owner cannot be added to shared list" });
-        }
+      if (String(canvas.owner) === String(userToShare._id)) {
+        return res.status(400).json({ error: "Owner cannot be added to shared list" });
+      }
 
-        // Check if the user is already in the shared array
-        const alreadyShared = canvas.shared.some(id => id.toString() === sharedUserId.toString());
-        if (alreadyShared) {
-            return res.status(400).json({ error: "Already shared with user" });
-        }
+      const alreadyShared = canvas.shared.some((id) => String(id) === String(userToShare._id));
+      if (alreadyShared) {
+        return res.status(400).json({ error: "Already shared with user" });
+      }
 
-        // Add user to shared list
-        canvas.shared.push(sharedUserId);
-        await canvas.save();
+      canvas.shared.push(userToShare._id);
+      await canvas.save();
 
-        res.json({ message: "Canvas shared successfully" });
+      return res.json({ message: "Canvas shared successfully" });
     } catch (error) {
-        res.status(500).json({ error: "Failed to share canvas", details: error.message });
+      return res.status(500).json({ error: "Failed to share canvas", details: error.message });
     }
-};
+  };
 
-
-// Unshare canvas from a user
-exports.unshareCanvas = async (req, res) => {
+  const unshareCanvas = async (req, res) => {
     try {
-        const { userIdToRemove } = req.body;
-        const canvasId = req.params.id;
-        const userId = req.userId;
+      const { userIdToRemove } = req.body;
+      const canvasId = req.params.id;
+      const userId = req.userId;
 
-        const canvas = await Canvas.findById(canvasId);
-        if (!canvas) {
-            return res.status(404).json({ error: "Canvas not found" });
-        }
+      if (!mongoose.Types.ObjectId.isValid(canvasId)) {
+        return res.status(400).json({ error: "Invalid canvas ID" });
+      }
 
-        if (canvas.owner.toString() !== userId) {
-            return res.status(403).json({ error: "Only the owner can unshare this canvas" });
-        }
+      const canvas = await Canvas.findById(canvasId);
+      if (!canvas) {
+        return res.status(404).json({ error: "Canvas not found" });
+      }
 
-        canvas.shared = canvas.shared.filter(id => id.toString() !== userIdToRemove);
-        await canvas.save();
+      if (String(canvas.owner) !== String(userId)) {
+        return res.status(403).json({ error: "Only the owner can unshare this canvas" });
+      }
 
-        res.json({ message: "Canvas unshared successfully" });
+      canvas.shared = canvas.shared.filter((id) => String(id) !== String(userIdToRemove));
+      await canvas.save();
+
+      return res.json({ message: "Canvas unshared successfully" });
     } catch (error) {
-        res.status(500).json({ error: "Failed to unshare canvas", details: error.message });
+      return res.status(500).json({ error: "Failed to unshare canvas", details: error.message });
     }
-};
+  };
 
-exports.deleteCanvas = async (req, res) => {
+  const deleteCanvas = async (req, res) => {
     try {
-        const canvasId = req.params.id;
-        const userId = req.userId;
+      const canvasId = req.params.id;
+      const userId = req.userId;
 
-        const canvas = await Canvas.findById(canvasId);
-        if (!canvas) {
-            return res.status(404).json({ error: "Canvas not found" });
-        }
+      if (!mongoose.Types.ObjectId.isValid(canvasId)) {
+        return res.status(400).json({ error: "Invalid canvas ID" });
+      }
 
-        if (canvas.owner.toString() !== userId) {
-            return res.status(403).json({ error: "Only the owner can delete this canvas" });
-        }
+      const canvas = await Canvas.findById(canvasId);
+      if (!canvas) {
+        return res.status(404).json({ error: "Canvas not found" });
+      }
 
-        await Canvas.findByIdAndDelete(canvasId);
-        res.json({ message: "Canvas deleted successfully" });
+      if (String(canvas.owner) !== String(userId)) {
+        return res.status(403).json({ error: "Only the owner can delete this canvas" });
+      }
+
+      await Canvas.findByIdAndDelete(canvasId);
+      return res.json({ message: "Canvas deleted successfully" });
     } catch (error) {
-        res.status(500).json({ error: "Failed to delete canvas", details: error.message });
+      return res.status(500).json({ error: "Failed to delete canvas", details: error.message });
     }
-};
+  };
 
-exports.getUserCanvases = async (req, res) => {
+  const getUserCanvases = async (req, res) => {
     try {
-        const userId = req.userId;
+      const userId = req.userId;
+      const canvases = await Canvas.find({
+        $or: [{ owner: userId }, { shared: userId }]
+      }).sort({ updatedAt: -1, createdAt: -1 });
 
-        const canvases = await Canvas.find({
-            $or: [{ owner: userId }, { shared: userId }]
-        }).sort({ createdAt: -1 });
-
-        res.json(canvases);
+      return res.json(canvases);
     } catch (error) {
-        res.status(500).json({ error: "Failed to fetch canvases", details: error.message });
+      return res.status(500).json({ error: "Failed to fetch canvases", details: error.message });
     }
+  };
+
+  return {
+    createCanvas,
+    updateCanvas,
+    loadCanvas,
+    shareCanvas,
+    unshareCanvas,
+    deleteCanvas,
+    getUserCanvases
+  };
+}
+
+module.exports = {
+  createCanvasController,
+  createCanvasSchema,
+  updateCanvasSchema,
+  shareCanvasSchema,
+  unshareCanvasSchema,
+  idParamSchema
 };

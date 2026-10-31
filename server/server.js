@@ -1,107 +1,127 @@
-const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
-require("dotenv").config();
-const connectToDB = require('./config/db')
-const { Server } = require("socket.io");
 const http = require("http");
-const Canvas = require("./models/canvasModel");
+const { Server } = require("socket.io");
 const jwt = require("jsonwebtoken");
-const SECRET_KEY = process.env.JWT_SECRET;
+const mongoose = require("mongoose");
+const Canvas = require("./models/canvasModel");
+const { loadConfig } = require("./config/env");
+const { connectDB, disconnectDB } = require("./config/db");
+const { createApp } = require("./app");
 
+function extractSocketToken(socket) {
+  if (socket.handshake.auth && socket.handshake.auth.token) {
+    return socket.handshake.auth.token;
+  }
+  const authHeader = socket.handshake.headers.authorization;
+  if (authHeader) {
+    return authHeader.startsWith("Bearer ")
+      ? authHeader.slice(7).trim()
+      : authHeader.trim();
+  }
+  return null;
+}
 
-const userRoutes = require("./routes/userRoutes");
-const canvasRoutes = require("./routes/canvasRoutes");
-
-const app = express();
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Routes
-app.use("/api/users", userRoutes);
-app.use("/api/canvas", canvasRoutes);
-
-
-connectToDB();
-
-const server = http.createServer(app);
-const io = new Server(server, {
+function createServer(app, config) {
+  const httpServer = http.createServer(app);
+  const io = new Server(httpServer, {
     cors: {
-      origin: ["http://localhost:3000", "https://whiteboard-tutorial-eight.vercel.app"], 
+      origin: config.CORS_ORIGINS,
       methods: ["GET", "POST"],
+      credentials: true
     },
+    maxHttpBufferSize: 1e6 // 1MB default
   });
 
-let canvasData = {};
-let i = 0;
-io.on("connection", (socket) => {
-    console.log("A user connected:", socket.id);
-  
-    socket.on("joinCanvas", async ({ canvasId }) => {
-        console.log("Joining canvas:", canvasId);
-        try {
-        const authHeader = socket.handshake.headers.authorization;
-        if (!authHeader || !authHeader.startsWith("Bearer ")) {
-            console.log("No token provided.");
-            setTimeout(() => {
-              socket.emit("unauthorized", { message: "Access Denied: No Token" });
-          }, 100);
-            return;
-        }
+  // Socket authentication middleware
+  io.use((socket, next) => {
+    const token = extractSocketToken(socket);
+    if (!token) {
+      return next(new Error("Authentication error: No token provided"));
+    }
 
-        const token = authHeader.split(" ")[1];
-        const decoded = jwt.verify(token, SECRET_KEY);
-        const userId = decoded.userId;
-        console.log("User ID:", userId);
+    try {
+      const decoded = jwt.verify(token, config.JWT_SECRET);
+      socket.userId = decoded.userId;
+      next();
+    } catch (err) {
+      return next(new Error("Authentication error: Invalid or expired token"));
+    }
+  });
+
+  let canvasData = {};
+
+  io.on("connection", (socket) => {
+    socket.on("joinCanvas", async ({ canvasId }) => {
+      try {
+        if (!canvasId || !mongoose.Types.ObjectId.isValid(canvasId)) {
+          return socket.emit("error", { message: "Invalid canvasId" });
+        }
 
         const canvas = await Canvas.findById(canvasId);
-        console.log(canvas)
-        if (!canvas || (String(canvas.owner) !== String(userId) && !canvas.shared.includes(userId))) {
-            console.log("Unauthorized access.");
-            setTimeout(() => {
-                socket.emit("unauthorized", { message: "You are not authorized to join this canvas." });
-            }, 100);
-            return;
+        if (!canvas) {
+          return socket.emit("unauthorized", { message: "Canvas not found" });
         }
 
-        // socket.emit("authorized");
-  
+        const isOwner = String(canvas.owner) === String(socket.userId);
+        const isShared = canvas.shared.some((id) => String(id) === String(socket.userId));
+        if (!isOwner && !isShared) {
+          return socket.emit("unauthorized", {
+            message: "You are not authorized to join this canvas."
+          });
+        }
+
         socket.join(canvasId);
-        console.log(`User ${socket.id} joined canvas ${canvasId}`);
-  
-        if (canvasData[canvasId]) {
-            console.log(canvasData)
-          socket.emit("loadCanvas", canvasData[canvasId]);
-        } else {
-          socket.emit("loadCanvas", canvas.elements);
-        }
+        const existing = canvasData[canvasId] || canvas.elements || [];
+        socket.emit("loadCanvas", existing);
       } catch (error) {
-        console.error(error);
-        socket.emit("error", { message: "An error occurred while joining the canvas." });
-        }
+        socket.emit("error", { message: "Failed to join canvas" });
+      }
     });
 
     socket.on("drawingUpdate", async ({ canvasId, elements }) => {
-        try {
-          canvasData[canvasId] = elements;
-    
-          socket.to(canvasId).emit("receiveDrawingUpdate", elements);
-    
-          const canvas = await Canvas.findById(canvasId);
-          if (canvas) {
-            // console.log('updating canvas... ', i++)
-            await Canvas.findByIdAndUpdate(canvasId, { elements }, { new: true, useFindAndModify: false });
-          }
-        } catch (error) {
-          console.error(error);
-        }
-      });
-    
-      socket.on("disconnect", () => {
-        console.log("User disconnected:", socket.id);
-      });
-    });
+      try {
+        if (!canvasId || !Array.isArray(elements)) return;
+        canvasData[canvasId] = elements;
+        socket.to(canvasId).emit("receiveDrawingUpdate", elements);
 
-server.listen(5000, () => console.log("Server running on port 5000"));
+        if (mongoose.Types.ObjectId.isValid(canvasId)) {
+          await Canvas.findByIdAndUpdate(canvasId, {
+            elements,
+            updatedAt: new Date()
+          });
+        }
+      } catch (error) {
+        console.error("drawingUpdate error:", error.message);
+      }
+    });
+  });
+
+  return { httpServer, io };
+}
+
+async function startServer(customConfig) {
+  const config = customConfig || loadConfig();
+  const dbInfo = await connectDB(config);
+  console.log(`Database connected: ${dbInfo.isMemory ? "in-memory mongodb" : dbInfo.uri}`);
+
+  const app = createApp(config);
+  const { httpServer, io } = createServer(app, config);
+
+  return new Promise((resolve) => {
+    const serverInstance = httpServer.listen(config.PORT, () => {
+      console.log(`Server listening on port ${config.PORT} (${config.NODE_ENV})`);
+      resolve({ serverInstance, httpServer, io, config });
+    });
+  });
+}
+
+if (require.main === module) {
+  startServer().catch((err) => {
+    console.error("Fatal startup error:", err);
+  });
+}
+
+module.exports = {
+  createServer,
+  startServer,
+  extractSocketToken
+};
