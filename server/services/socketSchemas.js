@@ -42,6 +42,8 @@ const elementAddSchema = z.object({
 const elementUpdateSchema = z.object({
   canvasId: z.string().min(1, { message: "canvasId is required" }),
   id: z.union([z.string(), z.number()]),
+  seq: z.number().int().positive().optional(),
+  points: z.array(pointSchema).max(MAX_POINTS_PER_ELEMENT).optional(),
   patch: z
     .object({
       points: z.array(pointSchema).max(MAX_POINTS_PER_ELEMENT).optional(),
@@ -55,6 +57,7 @@ const elementUpdateSchema = z.object({
       text: z.string().optional()
     })
     .passthrough()
+    .optional()
 });
 
 const elementRemoveSchema = z.object({

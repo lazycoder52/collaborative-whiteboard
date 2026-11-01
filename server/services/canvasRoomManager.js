@@ -81,6 +81,7 @@ class CanvasRoomManager {
       ...element,
       id: element.id,
       userId: String(userId),
+      lastSeq: 0,
       updatedAt: Date.now()
     };
 
@@ -100,7 +101,7 @@ class CanvasRoomManager {
     return enriched;
   }
 
-  updateElement(canvasId, elementId, patch, userId) {
+  updateElement(canvasId, elementId, updateData, userId) {
     const room = this.rooms.get(String(canvasId));
     if (!room) return null;
 
@@ -108,26 +109,75 @@ class CanvasRoomManager {
     const existing = room.elements.get(elId);
     if (!existing) return null;
 
-    let updated;
-    if (patch.points && Array.isArray(patch.points)) {
-      const mergedPoints = patch.points;
-      updated = {
-        ...existing,
-        ...patch,
-        points: mergedPoints,
-        updatedAt: Date.now()
-      };
-    } else {
-      updated = {
-        ...existing,
-        ...patch,
-        updatedAt: Date.now()
+    const seq = updateData ? updateData.seq : undefined;
+    const points = updateData
+      ? updateData.points || (updateData.patch && updateData.patch.points)
+      : undefined;
+    const patch =
+      updateData &&
+      (updateData.patch ||
+        (updateData.seq === undefined ? updateData : undefined));
+
+    if (seq !== undefined) {
+      const expectedSeq = (existing.lastSeq || 0) + 1;
+      if (seq !== expectedSeq) {
+        return {
+          outOfOrder: true,
+          expectedSeq,
+          element: existing
+        };
+      }
+
+      const pointsToAppend = Array.isArray(points) ? points : [];
+      if (pointsToAppend.length > 0) {
+        const merged = (existing.points || []).concat(pointsToAppend);
+        if (merged.length > 5000) {
+          return {
+            limitExceeded: true,
+            error: "Points array exceeds maximum limit of 5000"
+          };
+        }
+        existing.points = merged;
+      }
+      existing.lastSeq = seq;
+
+      if (patch) {
+        const { points: _p, ...otherPatch } = patch;
+        Object.assign(existing, otherPatch);
+      }
+      existing.updatedAt = Date.now();
+      this.markDirty(room);
+
+      return {
+        success: true,
+        element: existing,
+        appendedPoints: pointsToAppend,
+        seq
       };
     }
 
-    room.elements.set(elId, updated);
+    // Sequence-less updates (e.g. geometric shape transformations or text)
+    if (points && Array.isArray(points)) {
+      if (points.length > 5000) {
+        return {
+          limitExceeded: true,
+          error: "Points array exceeds maximum limit of 5000"
+        };
+      }
+      existing.points = points;
+    }
+    if (patch) {
+      const { points: _p, ...otherPatch } = patch;
+      Object.assign(existing, otherPatch);
+    }
+    existing.updatedAt = Date.now();
     this.markDirty(room);
-    return updated;
+
+    return {
+      success: true,
+      element: existing,
+      patch
+    };
   }
 
   removeElement(canvasId, elementId, userId) {

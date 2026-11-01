@@ -135,28 +135,79 @@ function createServer(app, config, customRoomManager = null) {
       }
     });
 
-    socket.on("element:update", (rawPayload) => {
+    socket.on("element:update", (rawPayload, ackCallback) => {
       if (!socket.rateLimiter.consume(1)) {
+        if (typeof ackCallback === "function") {
+          ackCallback({ success: false, error: "Rate limit exceeded" });
+        }
         return socket.emit("error", { message: "Rate limit exceeded" });
       }
 
       const parseResult = elementUpdateSchema.safeParse(rawPayload);
       if (!parseResult.success) {
+        if (typeof ackCallback === "function") {
+          ackCallback({
+            success: false,
+            error: "Invalid element:update payload"
+          });
+        }
         return socket.emit("error", {
           message: "Invalid element:update payload",
           details: parseResult.error.issues
         });
       }
 
-      const { canvasId, id, patch } = parseResult.data;
-      const updated = roomManager.updateElement(
+      const { canvasId, id } = parseResult.data;
+      const result = roomManager.updateElement(
         canvasId,
         id,
-        patch,
+        parseResult.data,
         socket.userId
       );
-      if (updated) {
-        socket.to(canvasId).emit("element:update", { canvasId, id, patch });
+
+      if (!result) {
+        if (typeof ackCallback === "function") {
+          ackCallback({ success: false, error: "Element not found" });
+        }
+        return;
+      }
+
+      if (result.outOfOrder) {
+        socket.emit("canvas:load", {
+          canvasId,
+          resync: true,
+          elementId: id,
+          elements: [result.element]
+        });
+        if (typeof ackCallback === "function") {
+          ackCallback({
+            success: false,
+            resync: true,
+            expectedSeq: result.expectedSeq
+          });
+        }
+        return;
+      }
+
+      if (result.limitExceeded) {
+        socket.emit("error", { message: result.error });
+        if (typeof ackCallback === "function") {
+          ackCallback({ success: false, error: result.error });
+        }
+        return;
+      }
+
+      if (result.success) {
+        if (typeof ackCallback === "function") {
+          ackCallback({ success: true, seq: result.seq });
+        }
+        socket.to(canvasId).emit("element:update", {
+          canvasId,
+          id,
+          seq: result.seq,
+          points: result.appendedPoints,
+          patch: parseResult.data.patch
+        });
       }
     });
 
