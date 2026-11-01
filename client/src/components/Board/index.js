@@ -13,6 +13,7 @@ function Board({ id }) {
   const canvasRef = useRef(null);
   const textAreaRef = useRef(null);
   const activeElementRef = useRef(null);
+  const strokeSeqRef = useRef({ id: null, seq: 0, pendingPoints: [], unackedPoints: [] });
 
   const {
     elements,
@@ -31,11 +32,50 @@ function Board({ id }) {
   const { toolboxState } = useContext(toolboxContext);
   const [isAuthorized, setIsAuthorized] = useState(true);
 
+  // Flush appended brush points with element ID and incremental sequence number
+  const flushBrushPoints = useCallback((canvasId, elementId) => {
+    const state = strokeSeqRef.current;
+    if (!state || state.id !== elementId || state.pendingPoints.length === 0) return;
+    const socket = getSocket();
+    if (!socket) return;
+
+    const nextSeq = state.seq + 1;
+    const pointsToSend = [...state.pendingPoints];
+    state.pendingPoints = [];
+    state.unackedPoints = pointsToSend;
+    state.seq = nextSeq;
+
+    socket.emit(
+      "element:update",
+      {
+        canvasId,
+        id: elementId,
+        seq: nextSeq,
+        points: pointsToSend
+      },
+      (response) => {
+        if (response && response.success) {
+          state.unackedPoints = [];
+        } else if (response && response.resync) {
+          socket.emit("joinCanvas", { canvasId });
+        }
+      }
+    );
+  }, []);
+
   // Throttled delta updates (50ms interval)
-  const throttledEmitUpdate = useMemo(() => {
+  const throttledEmitBrushUpdate = useMemo(() => {
+    return throttle((canvasId, elementId) => {
+      flushBrushPoints(canvasId, elementId);
+    }, 50);
+  }, [flushBrushPoints]);
+
+  const throttledEmitShapeUpdate = useMemo(() => {
     return throttle((canvasId, elementId, patch) => {
       const socket = getSocket();
-      socket.emit("element:update", { canvasId, id: elementId, patch });
+      if (socket) {
+        socket.emit("element:update", { canvasId, id: elementId, patch });
+      }
     }, 50);
   }, []);
 
@@ -48,7 +88,7 @@ function Board({ id }) {
     socket.emit("joinCanvas", { canvasId: id });
 
     const handleCanvasLoad = (data) => {
-      setElements(data.elements || []);
+      setElements(data.elements || [], !!data.resync);
     };
 
     const handleElementAdd = (data) => {
@@ -58,8 +98,8 @@ function Board({ id }) {
     };
 
     const handleElementUpdate = (data) => {
-      if (data.id && data.patch) {
-        updateDeltaElement(data.id, data.patch);
+      if (data.id) {
+        updateDeltaElement(data.id, data.patch, data.points, data.seq);
       }
     };
 
@@ -211,6 +251,15 @@ function Board({ id }) {
       points: newElem.points ? [...newElem.points] : []
     };
 
+    if (newElem.type === TOOL_ITEMS.BRUSH) {
+      strokeSeqRef.current = {
+        id: elementId,
+        seq: 0,
+        pendingPoints: [],
+        unackedPoints: []
+      };
+    }
+
     // Emit initial element:add delta
     getSocket().emit("element:add", {
       canvasId: id,
@@ -227,11 +276,12 @@ function Board({ id }) {
       const active = activeElementRef.current;
       if (active.type === TOOL_ITEMS.BRUSH) {
         active.points.push({ x: clientX, y: clientY });
-        throttledEmitUpdate(id, active.id, { points: active.points });
+        strokeSeqRef.current.pendingPoints.push({ x: clientX, y: clientY });
+        throttledEmitBrushUpdate(id, active.id);
       } else {
         active.x2 = clientX;
         active.y2 = clientY;
-        throttledEmitUpdate(id, active.id, { x2: clientX, y2: clientY });
+        throttledEmitShapeUpdate(id, active.id, { x2: clientX, y2: clientY });
       }
     } else if (toolActionType === TOOL_ACTION_TYPES.ERASING) {
       const target = elements.find((el) => isPointNearElement(el, clientX, clientY));
@@ -248,11 +298,8 @@ function Board({ id }) {
     if (activeElementRef.current) {
       const active = activeElementRef.current;
       if (active.type === TOOL_ITEMS.BRUSH) {
-        getSocket().emit("element:update", {
-          canvasId: id,
-          id: active.id,
-          patch: { points: active.points }
-        });
+        flushBrushPoints(id, active.id);
+        strokeSeqRef.current = { id: null, seq: 0, pendingPoints: [], unackedPoints: [] };
       } else {
         getSocket().emit("element:update", {
           canvasId: id,

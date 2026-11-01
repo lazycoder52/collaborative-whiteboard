@@ -38,4 +38,30 @@ describe("Synthetic Protocol Benchmark Metrics Verification", () => {
       freshRun.reduction.bytesReductionPercent
     );
   });
+
+  test("README.md benchmark table figures match metrics/protocol.json", () => {
+    const readmePath = path.join(__dirname, "..", "..", "README.md");
+    const readmeContent = fs.readFileSync(readmePath, "utf8");
+    const metricsPath = path.join(
+      __dirname,
+      "..",
+      "..",
+      "metrics",
+      "protocol.json"
+    );
+    const metrics = JSON.parse(fs.readFileSync(metricsPath, "utf8"));
+
+    expect(readmeContent).toContain(
+      `${metrics.granularDeltaProtocol.eventCount} emissions`
+    );
+    expect(readmeContent).toContain(
+      `${metrics.reduction.eventCountReductionPercent} reduction`
+    );
+    expect(readmeContent).toContain(
+      `${metrics.reduction.bytesReductionPercent} reduction`
+    );
+    expect(readmeContent).toContain(
+      `${metrics.reduction.databaseWritesReductionPercent} reduction`
+    );
+  });
 });

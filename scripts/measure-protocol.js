@@ -43,13 +43,16 @@ function runBenchmark() {
   }
 
   // -------------------------------------------------------------
-  // 2. Granular Delta Protocol (Hardened Architecture)
+  // 2. Granular Delta Protocol (Hardened Append-Only Architecture)
   // -------------------------------------------------------------
   // In the hardened architecture:
   // - Initial mousedown emits a single `element:add` with the initial point.
   // - Points are throttled at ~50ms intervals. At 60Hz sampling (~16.6ms/point),
-  //   200 points take ~3.3 seconds, producing ~66 throttled batches.
-  // - Each batch emits `element:update` containing `{ canvasId, id, patch }`.
+  //   ~3 points accumulate per batch.
+  // - Each batch emits `element:update` containing ONLY the newly appended points
+  //   since the last send along with incremental sequence number:
+  //   `{ canvasId, id, seq, points: [newPoints] }`.
+  // - On mouseup, any remaining points are flushed.
   // - MongoDB persistence is debounced at 2 seconds in memory, resulting in 1
   //   final write after stroke completion.
   let deltaBytes = 0;
@@ -72,28 +75,20 @@ function runBenchmark() {
 
   // Throttled point batches (3 points per ~50ms batch on 60Hz input)
   const POINTS_PER_BATCH = 3;
+  let seq = 0;
   for (let i = 1; i < TOTAL_POINTS; i += POINTS_PER_BATCH) {
     const batchEnd = Math.min(i + POINTS_PER_BATCH, TOTAL_POINTS);
-    const currentPoints = points.slice(0, batchEnd);
+    const batchPoints = points.slice(i, batchEnd);
+    seq += 1;
     const updatePayload = {
       canvasId: CANVAS_ID,
       id: ELEMENT_ID,
-      patch: {
-        points: currentPoints
-      }
+      seq,
+      points: batchPoints
     };
     deltaBytes += Buffer.byteLength(JSON.stringify(updatePayload), "utf8");
     deltaEvents += 1;
   }
-
-  // Final mouseup flush
-  const finalUpdatePayload = {
-    canvasId: CANVAS_ID,
-    id: ELEMENT_ID,
-    patch: { points }
-  };
-  deltaBytes += Buffer.byteLength(JSON.stringify(finalUpdatePayload), "utf8");
-  deltaEvents += 1;
 
   const deltaWrites = 1; // Debounced 2s persistence yields 1 database write
 
@@ -115,7 +110,7 @@ function runBenchmark() {
       eventCount: deltaEvents,
       totalBytesSent: deltaBytes,
       databaseWrites: deltaWrites,
-      description: "One element:add event, throttled element:update batches (50ms interval), and debounced database persistence (2s window)"
+      description: "One element:add event, throttled sequence-numbered element:update point batches (50ms interval), and debounced database persistence (2s window)"
     },
     reduction: {
       bytesReductionPercent: `${bytesReductionPercent}%`,

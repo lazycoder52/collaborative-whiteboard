@@ -185,6 +185,210 @@ describe("Phase 2: Real-time Protocol Rework", () => {
     cLate.disconnect();
   });
 
+  test("element:update appends points with sequence numbers and rejects out-of-order sequence with resync", async () => {
+    const c1 = createClient(token1);
+    const c2 = createClient(token2);
+
+    await Promise.all([
+      new Promise((r) => c1.on("connect", r)),
+      new Promise((r) => c2.on("connect", r))
+    ]);
+
+    c1.emit("joinCanvas", { canvasId: String(canvas1._id) });
+    c2.emit("joinCanvas", { canvasId: String(canvas1._id) });
+    await new Promise((r) => setTimeout(r, 100));
+
+    // 1. Initial element:add
+    c1.emit("element:add", {
+      canvasId: String(canvas1._id),
+      element: {
+        id: "stroke-seq-test",
+        type: "BRUSH",
+        points: [{ x: 10, y: 10 }]
+      }
+    });
+    await new Promise((r) => setTimeout(r, 100));
+
+    // 2. Client 1 sends sequence 1
+    let c2ReceivedUpdate = null;
+    c2.on("element:update", (data) => {
+      c2ReceivedUpdate = data;
+    });
+
+    const ack1 = await new Promise((resolve) => {
+      c1.emit(
+        "element:update",
+        {
+          canvasId: String(canvas1._id),
+          id: "stroke-seq-test",
+          seq: 1,
+          points: [
+            { x: 12, y: 12 },
+            { x: 14, y: 14 }
+          ]
+        },
+        resolve
+      );
+    });
+
+    expect(ack1.success).toBe(true);
+    expect(ack1.seq).toBe(1);
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(c2ReceivedUpdate).toBeTruthy();
+    expect(c2ReceivedUpdate.id).toBe("stroke-seq-test");
+    expect(c2ReceivedUpdate.seq).toBe(1);
+    expect(c2ReceivedUpdate.points).toHaveLength(2);
+
+    // 3. Client 1 sends out-of-order sequence (seq: 5 instead of 2)
+    let resyncEvent = null;
+    c1.on("canvas:load", (data) => {
+      if (data.resync) {
+        resyncEvent = data;
+      }
+    });
+
+    const ackOutOfOrder = await new Promise((resolve) => {
+      c1.emit(
+        "element:update",
+        {
+          canvasId: String(canvas1._id),
+          id: "stroke-seq-test",
+          seq: 5,
+          points: [{ x: 50, y: 50 }]
+        },
+        resolve
+      );
+    });
+
+    expect(ackOutOfOrder.success).toBe(false);
+    expect(ackOutOfOrder.resync).toBe(true);
+    expect(ackOutOfOrder.expectedSeq).toBe(2);
+
+    await new Promise((r) => setTimeout(r, 100));
+    expect(resyncEvent).toBeTruthy();
+    expect(resyncEvent.resync).toBe(true);
+    expect(resyncEvent.elementId).toBe("stroke-seq-test");
+    expect(resyncEvent.elements[0].points).toHaveLength(3);
+
+    c1.disconnect();
+    c2.disconnect();
+  });
+
+  test("late joiner mid-stroke receives the full partial stroke via canvas:load", async () => {
+    const cArtist = createClient(token1);
+    await new Promise((r) => cArtist.on("connect", r));
+    cArtist.emit("joinCanvas", { canvasId: String(canvas1._id) });
+    await new Promise((r) => setTimeout(r, 100));
+
+    const strokeId = "mid-stroke-elem-001";
+    cArtist.emit("element:add", {
+      canvasId: String(canvas1._id),
+      element: {
+        id: strokeId,
+        type: "BRUSH",
+        points: [{ x: 100, y: 100 }]
+      }
+    });
+    await new Promise((r) => setTimeout(r, 50));
+
+    const batch1 = Array.from({ length: 10 }, (_, i) => ({
+      x: 101 + i,
+      y: 100
+    }));
+    const batch2 = Array.from({ length: 10 }, (_, i) => ({
+      x: 111 + i,
+      y: 100
+    }));
+    const batch3 = Array.from({ length: 10 }, (_, i) => ({
+      x: 121 + i,
+      y: 100
+    }));
+
+    await new Promise((r) =>
+      cArtist.emit(
+        "element:update",
+        { canvasId: String(canvas1._id), id: strokeId, seq: 1, points: batch1 },
+        r
+      )
+    );
+    await new Promise((r) =>
+      cArtist.emit(
+        "element:update",
+        { canvasId: String(canvas1._id), id: strokeId, seq: 2, points: batch2 },
+        r
+      )
+    );
+    await new Promise((r) =>
+      cArtist.emit(
+        "element:update",
+        { canvasId: String(canvas1._id), id: strokeId, seq: 3, points: batch3 },
+        r
+      )
+    );
+
+    const cLate = createClient(token2);
+    const canvasLoadData = await new Promise((resolve) => {
+      cLate.on("connect", () => {
+        cLate.emit("joinCanvas", { canvasId: String(canvas1._id) });
+      });
+      cLate.on("canvas:load", resolve);
+    });
+
+    const midStroke = canvasLoadData.elements.find((el) => el.id === strokeId);
+    expect(midStroke).toBeTruthy();
+    expect(midStroke.points).toHaveLength(31);
+    expect(midStroke.lastSeq).toBe(3);
+
+    cArtist.disconnect();
+    cLate.disconnect();
+  });
+
+  test("server cumulatively enforces 5000-point limit per element", async () => {
+    const c1 = createClient(token1);
+    await new Promise((r) => c1.on("connect", r));
+    c1.emit("joinCanvas", { canvasId: String(canvas1._id) });
+    await new Promise((r) => setTimeout(r, 100));
+
+    const elementId = "limit-test-elem";
+    c1.emit("element:add", {
+      canvasId: String(canvas1._id),
+      element: {
+        id: elementId,
+        type: "BRUSH",
+        points: Array.from({ length: 4900 }, (_, i) => ({ x: i, y: i }))
+      }
+    });
+    await new Promise((r) => setTimeout(r, 100));
+
+    let errorReceived = null;
+    c1.on("error", (err) => {
+      errorReceived = err;
+    });
+
+    const ack = await new Promise((resolve) => {
+      c1.emit(
+        "element:update",
+        {
+          canvasId: String(canvas1._id),
+          id: elementId,
+          seq: 1,
+          points: Array.from({ length: 200 }, (_, i) => ({
+            x: 5000 + i,
+            y: 5000 + i
+          }))
+        },
+        resolve
+      );
+    });
+
+    expect(ack.success).toBe(false);
+    expect(ack.error).toMatch(/exceeds maximum limit of 5000/);
+    expect(errorReceived.message).toMatch(/exceeds maximum limit of 5000/);
+
+    c1.disconnect();
+  });
+
   test("server-side per-user undo/redo only affects requesting user's elements", async () => {
     const c1 = createClient(token1);
     const c2 = createClient(token2);

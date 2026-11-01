@@ -45,7 +45,7 @@ The WebSocket communication layer enforces granular delta synchronization. With 
 | `presence:join` | Server -> Client | `{ canvasId: string, userId: string }` | Broadcasts new user arrival to peer sockets in room |
 | `presence:leave` | Server -> Client | `{ canvasId: string, userId: string }` | Broadcasts user departure to peer sockets in room |
 | `element:add` | Bidirectional | `{ canvasId: string, element: Element }` | Transmits newly created stroke or shape |
-| `element:update` | Bidirectional | `{ canvasId: string, id: string, patch: object }` | Transmits batched coordinate or point modifications |
+| `element:update` | Bidirectional | `{ canvasId: string, id: string, seq?: number, points?: Point[], patch?: object }` | Transmits batched appended stroke points or property patch |
 | `element:remove` | Bidirectional | `{ canvasId: string, id: string }` | Transmits deletion of an element (via eraser or undo) |
 | `undo` | Client -> Server | `{ canvasId: string }` | Reverts requesting user's most recent action |
 | `redo` | Client -> Server | `{ canvasId: string }` | Re-applies requesting user's most recent undone action |
@@ -58,8 +58,8 @@ A synthetic benchmark (`scripts/measure-protocol.js`) compares legacy full-array
 
 | Metric | Monolithic Full-Array (Legacy) | Granular Delta Protocol (Hardened) | Improvement |
 | :--- | :--- | :--- | :--- |
-| WebSocket Events | 200 emissions | 69 emissions | 65.50% reduction |
-| Total Payload Data | 362,930 bytes (~363 KB) | 124,762 bytes (~125 KB) | 65.62% reduction |
+| WebSocket Events | 200 emissions | 68 emissions | 66.00% reduction |
+| Total Payload Data | 362,930 bytes (~363 KB) | 9,521 bytes (~9.5 KB) | 97.38% reduction |
 | Database Writes | 200 writes | 1 write | 99.50% reduction |
 
 Benchmark script execution:
@@ -70,6 +70,8 @@ node scripts/measure-protocol.js
 ## Running Locally
 
 The project supports zero-setup local execution using an embedded in-memory MongoDB server. No external database installation is required for development.
+
+> **Note on Initial Run**: When starting with `USE_MEMORY_DB=true` (the default in development when `MONGODB_URI` is unset), `mongodb-memory-server` automatically downloads an embedded MongoDB binary (~70–100 MB) on first boot. Subsequent starts use the cached binary immediately.
 
 ### Prerequisites
 - Node.js (v18.0.0 or higher; tested on v20.x, v22.x, v24.x)
@@ -154,4 +156,4 @@ This refactoring and architectural hardening was developed with assistance from 
 
 ## Acknowledgements
 
-Source foundation for the canvas drawing tool: [Fill in source URL or reference here]
+TODO: [User to fill in source URL or reference for the canvas drawing tool foundation]
