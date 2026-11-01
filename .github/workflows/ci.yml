@@ -7,6 +7,18 @@ on:
     branches: [main]
 
 jobs:
+  security:
+    name: Gitleaks Secret Detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   server:
     name: Server Checks & Tests
     runs-on: ubuntu-latest
@@ -23,6 +35,11 @@ jobs:
         run: |
           cd server
           npm install
+
+      - name: Security audit (production dependencies, level high)
+        run: |
+          cd server
+          npm audit --omit=dev --audit-level=high
 
       - name: Check code formatting (Prettier)
         run: |
@@ -50,6 +67,11 @@ jobs:
         run: |
           cd client
           npm install --legacy-peer-deps
+
+      - name: Security audit (production dependencies, level high)
+        run: |
+          cd client
+          npm audit --omit=dev --audit-level=high
 
       - name: Run client tests
         run: |
