@@ -1,0 +1,5 @@
+[allowlist]
+description = "Allowlist test files containing mock JWT test secrets"
+paths = [
+  '''server/tests/.*'''
+]

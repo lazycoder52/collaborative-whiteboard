@@ -21,7 +21,7 @@ jobs:
           sudo mv gitleaks /usr/local/bin/
       - name: Run Gitleaks Secret Detection
         run: |
-          gitleaks detect --verbose --redact
+          gitleaks detect --verbose --redact --config=.gitleaks.toml
 
   server:
     name: Server Checks & Tests
