@@ -112,7 +112,28 @@ const boardReducer = (state, action) => {
     }
 
     case BOARD_ACTIONS.SET_CANVAS_ELEMENTS: {
-      const ensured = (action.payload.elements || []).map(ensureRoughElement);
+      const incoming = action.payload.elements || [];
+      if (action.payload.resync) {
+        const incomingMap = new Map(
+          incoming.map((el) => [String(el.id), ensureRoughElement(el)])
+        );
+        const merged = state.elements.map((el) => {
+          const found = incomingMap.get(String(el.id));
+          if (found) {
+            incomingMap.delete(String(el.id));
+            return found;
+          }
+          return el;
+        });
+        for (const remaining of incomingMap.values()) {
+          merged.push(remaining);
+        }
+        return {
+          ...state,
+          elements: merged
+        };
+      }
+      const ensured = incoming.map(ensureRoughElement);
       return {
         ...state,
         elements: ensured
@@ -137,12 +158,23 @@ const boardReducer = (state, action) => {
     }
 
     case "UPDATE_DELTA_ELEMENT": {
-      const { id, patch } = action.payload;
+      const { id, patch, points, seq } = action.payload;
       return {
         ...state,
         elements: state.elements.map((el) => {
           if (String(el.id) === String(id)) {
-            const merged = { ...el, ...patch };
+            let nextPoints = el.points;
+            if (points && Array.isArray(points)) {
+              nextPoints = [...(el.points || []), ...points];
+            } else if (patch && patch.points && Array.isArray(patch.points)) {
+              nextPoints = patch.points;
+            }
+            const merged = {
+              ...el,
+              ...(patch || {}),
+              points: nextPoints,
+              ...(seq !== undefined ? { lastSeq: seq } : {})
+            };
             return ensureRoughElement(merged);
           }
           return el;
@@ -255,10 +287,10 @@ const BoardProvider = ({ children }) => {
     });
   }, []);
 
-  const setElements = useCallback((elements) => {
+  const setElements = useCallback((elements, isResync = false) => {
     dispatchBoardAction({
       type: BOARD_ACTIONS.SET_CANVAS_ELEMENTS,
-      payload: { elements }
+      payload: { elements, resync: isResync }
     });
   }, []);
 
@@ -269,10 +301,10 @@ const BoardProvider = ({ children }) => {
     });
   }, []);
 
-  const updateDeltaElement = useCallback((id, patch) => {
+  const updateDeltaElement = useCallback((id, patch, points, seq) => {
     dispatchBoardAction({
       type: "UPDATE_DELTA_ELEMENT",
-      payload: { id, patch }
+      payload: { id, patch, points, seq }
     });
   }, []);
 
