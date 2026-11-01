@@ -4,11 +4,11 @@ Collaborative Whiteboard is a real-time, multi-user visual collaboration applica
 
 ## What I Built on Top
 
-While the original tutorial provided the base canvas tool palette, this repository re-architected the system for production-grade real-time collaboration:
+While the original tutorial provided the base canvas tool palette, this repository re-architected for real-time collaboration:
 
-- **Append-Only Delta Protocol**: Replaced full-canvas array broadcasts on every mouse move with an incremental, sequence-numbered delta streaming protocol (`element:add`, `element:update`, `element:remove`), reducing wire payload data by 97.38% and network events by 66.00%.
+- **Append-Only Delta Protocol**: Replaced full-canvas array broadcasts on every mouse move with an incremental, sequence-numbered delta streaming protocol (`element:add`, `element:update`, `element:remove`), reducing wire payload data by 97.38% and network events by 66.00% (synthetic 200-point stroke).
 - **Memory-First Debounced Persistence**: Implemented an in-memory working copy cache (`canvasRoomManager`) with 2-second debounced MongoDB writes, dirty-state tracking, empty room eviction, and graceful shutdown flushes.
-- **Server-Side Per-User Undo/Redo**: Implemented isolated per-user undo and redo stacks managed server-side, broadcasting granular removals and re-additions to peers without state corruption.
+- **Server-Side Per-User Undo/Redo**: Implemented isolated per-user undo and redo stacks managed server-side, broadcasting granular removals and re-additions to peers.
 - **Security Hardening**: Enforced strict CORS origin allowlists, mandatory JWT verification on HTTP and WebSocket connections, express-rate-limit protection, Helmet headers, and Zod payload validation.
 - **Zero-Setup Local Development**: Provided automatic fallback to `mongodb-memory-server` when `MONGODB_URI` is unset.
 - **Testing & CI**: Added 34 automated unit and integration tests across server and client, plus GitHub Actions CI with Gitleaks secret detection and production dependency vulnerability audits (`npm audit`).
