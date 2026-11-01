@@ -1,5 +1,11 @@
+[extend]
+useDefault = true
+
 [allowlist]
-description = "Allowlist test files containing mock JWT test secrets"
+description = "Allowlist mock test JWT secret used in automated test fixtures"
+regexes = [
+  '''this_is_a_very_long_test_secret_key_at_least_32_characters'''
+]
 paths = [
-  '''server/tests/.*'''
+  '''server/tests/(server-hardening|realtime-protocol)\.test\.js'''
 ]
